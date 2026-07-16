@@ -1,0 +1,87 @@
+# SearXNG settings — production-инстанс для Atomic-Scraper-Service.
+# Минимальный override: включаем JSON API, выключаем limiter, направляем
+# исходящий трафик через pool из 20 puls socks5.
+#
+# Подтверждено прогонами в serp_experiment/REPORT_searxng.md (прогон 9):
+#   VPN на хосте + этот pool + retries=2 в клиенте → 95.3% success.
+#
+# После правок: docker compose restart searxng
+
+use_default_settings: true
+
+general:
+  debug: false
+  instance_name: "atomic-scraper"
+  enable_metrics: true
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "en"
+  ban_time_on_fail: 5
+  max_ban_time_on_fail: 120
+  # !!! критично — JSON API доступен только если перечислен здесь
+  formats:
+    - html
+    - json
+
+server:
+  port: 8080
+  bind_address: "0.0.0.0"
+  base_url: false
+  # шумит на single-user инстансе → выключаем
+  limiter: false
+  public_instance: false
+  # secret_key подставляется из env SEARXNG_SECRET (см. docker-compose.yml)
+  secret_key: "atomic-scraper-do-not-use-in-prod"
+  image_proxy: false
+  http_protocol_version: "1.1"
+  method: "GET"
+
+ui:
+  default_locale: "en"
+  query_in_title: false
+  default_theme: simple
+
+# Per-request ротация через puls rotation-порт 823 (http). Каждый запрос —
+# новый exit-IP: бан/мёртвый IP не залипает (sticky-пул 11000-11009 раньше
+# держал выжженный IP 10 минут, и все ретраи били в него же). Замер
+# 2026-06-12: ротация 7/10 живых (7 уникальных IP), sticky 5/10.
+# ru+pl чередуются round-robin'ом; ретраи клиента
+# (src/infrastructure/external_api/searxng_client.py) добивают остальное.
+# Sticky-порты 11000-11099 остаются целиком скраперу (proxies.txt).
+outgoing:
+  request_timeout: 8.0
+  max_request_timeout: 12.0
+  useragent_suffix: ""
+  pool_connections: 20
+  pool_maxsize: 10
+  enable_http2: false
+  extra_proxy_timeout: 5
+  # ВНИМАНИЕ: не хардкодить креды прокси в репозитории.
+  # Заполняется при деплое из секрета/окружения (см. infra/searxng/README.md).
+  # Формат: http://<USER>:<PASS>@<HOST>:<PORT>
+  proxies:
+    all://:
+      - http://USER:PASS@proxy-host.example.com:823
+      - http://USER:PASS@proxy-host.example.com:823
+
+# Явно выключаем заведомо-плохие/онион-движки, чтобы они не тянули
+# request_timeout впустую перед попаданием в suspended.
+# yandex включён (по умолчанию выключен): наши запросы русскоязычные,
+# через ru-ротацию он потенциально самый результативный движок.
+engines:
+  - name: yandex
+    disabled: false
+  - name: brave
+    disabled: true
+  - name: startpage
+    disabled: true
+  - name: karmasearch
+    disabled: true
+  - name: karmasearch videos
+    disabled: true
+  - name: ahmia
+    disabled: true
+  - name: torch
+    disabled: true

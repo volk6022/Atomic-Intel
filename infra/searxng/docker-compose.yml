@@ -1,0 +1,42 @@
+# Production SearXNG для Atomic-Scraper-Service.
+#
+# Используется как backend для src/infrastructure/external_api/searxng_client.py.
+# Подтверждено прогонами в serp_experiment/REPORT_searxng.md:
+#   VPN на хосте + pool 20 socks5 (внутри settings.yml) + retries=2 в клиенте
+#   → 95.3% success rate.
+#
+# ПРЕДУСЛОВИЕ: на хосте должен быть запущен VPN. Без него success rate падает
+# до ~22% (Google rate-limit'ит резидентные socks5 без VPN).
+#
+# Запуск:
+#   docker compose up -d
+# Smoke:
+#   curl "http://localhost:8080/search?q=test&format=json" | jq '.results | length'
+services:
+
+  searxng:
+    image: docker.io/searxng/searxng:latest
+    container_name: atomic-scraper-searxng
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./searxng:/etc/searxng:rw
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    environment:
+      - SEARXNG_BASE_URL=http://localhost:8080/
+      - SEARXNG_SECRET=${SEARXNG_SECRET:-changeme-set-in-env}
+      - UWSGI_WORKERS=2
+      - UWSGI_THREADS=4
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "1m"
+        max-file: "1"

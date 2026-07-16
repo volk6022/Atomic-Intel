@@ -1,0 +1,136 @@
+{
+  "_comment": "Trimmed copy of a real /maps/api/search response. Carries enough shape to exercise YandexMapsExtractAction._parse_captured: two real businesses (Дэнтал Конфидэнс, Houston), one transit stop (must be filtered out), one metro station (must be filtered out).",
+  "csrfToken": "stub.csrfToken.value",
+  "data": {
+    "items": [
+      {
+        "type": "business",
+        "title": "Дэнтал Конфидэнс",
+        "shortTitle": "Дэнтал Конфидэнс",
+        "address": "Бармалеева ул., 12",
+        "fullAddress": "Санкт-Петербург, Бармалеева улица, 12",
+        "country": "Россия",
+        "coordinates": [30.3056, 59.964324],
+        "displayCoordinates": [30.3056, 59.964324],
+        "uri": "ymapsbm1://org?oid=82071161567",
+        "id": "82071161567",
+        "permalink": "82071161567",
+        "seoname": "dental_konfidens",
+        "status": "open",
+        "ratingData": {
+          "ratingCount": 338,
+          "ratingValue": 5,
+          "reviewCount": 292
+        },
+        "categories": [
+          {
+            "id": "184106132",
+            "name": "Стоматологическая клиника",
+            "class": "dental",
+            "seoname": "dental_clinic",
+            "pluralName": "Стоматологии"
+          }
+        ],
+        "phones": [
+          {
+            "number": "+7 (812) 218-28-10",
+            "type": "phone",
+            "value": "+78122182810"
+          },
+          {
+            "number": "+7 (812) 602-64-12",
+            "type": "phone",
+            "value": "+78126026412",
+            "info": "Администратор"
+          }
+        ],
+        "features": [
+          {
+            "id": "for_children",
+            "name": "есть детский кабинет",
+            "type": "bool",
+            "value": true,
+            "important": true
+          },
+          {
+            "id": "payment_method",
+            "name": "способ оплаты",
+            "type": "enum",
+            "value": [
+              {"id": "cash", "name": "наличными"},
+              {"id": "payment_card", "name": "оплата картой"}
+            ],
+            "important": false
+          }
+        ],
+        "metro": [
+          {
+            "id": "station__9805891",
+            "name": "Петроградская",
+            "distance": "560 м",
+            "distanceValue": 561.577,
+            "coordinates": [30.310995482, 59.966159282],
+            "type": "metro",
+            "color": "#0070bf"
+          }
+        ],
+        "photos": {
+          "count": 2,
+          "urlTemplate": "https://avatars.mds.yandex.net/get-altay/0/%s",
+          "items": [
+            {"urlTemplate": "https://avatars.mds.yandex.net/get-altay/1/%s"},
+            {"urlTemplate": "https://avatars.mds.yandex.net/get-altay/2/%s"}
+          ]
+        },
+        "advert": {
+          "ordInfo": {
+            "client": {
+              "tin": "7801234567",
+              "name": "ООО Дэнтал Конфидэнс"
+            }
+          }
+        }
+      },
+      {
+        "type": "business",
+        "title": "Houston",
+        "shortTitle": "Houston",
+        "address": "Большая Конюшенная, 25",
+        "fullAddress": "Санкт-Петербург, Большая Конюшенная улица, 25",
+        "coordinates": [30.323456, 59.937123],
+        "uri": "ymapsbm1://org?oid=178860213454",
+        "id": "178860213454",
+        "permalink": "178860213454",
+        "seoname": "houston",
+        "status": "open",
+        "ratingData": {
+          "ratingCount": 120,
+          "ratingValue": 4.6,
+          "reviewCount": 95
+        },
+        "categories": [
+          {
+            "id": "184106132",
+            "name": "Стоматологическая клиника",
+            "seoname": "dental_clinic"
+          }
+        ],
+        "phones": [
+          {"number": "+7 (812) 100-00-00", "value": "+78121000000", "type": "phone"}
+        ]
+      },
+      {
+        "type": "common",
+        "id": "stop__10066109",
+        "name": "Большой проспект П.С.",
+        "coordinates": [30.305289274, 59.964384884]
+      },
+      {
+        "type": "metro",
+        "id": "station__9805891",
+        "name": "Петроградская",
+        "coordinates": [30.310995482, 59.966159282]
+      }
+    ]
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "_comment": "Trimmed real /maps/api/business/fetchReviews response (cf. yandex_maps_experiment/results/06_fetch_reviews_reviews.json). 3 reviews — one with photos, one with business comment + translations, one bare-bones.",
+  "csrfToken": "stub.csrfToken.value",
+  "data": {
+    "reviews": [
+      {
+        "reviewId": "Y2uI6pYCxMQ4m4uKsxEHRjPGRfPTYvsqZ",
+        "businessId": "82071161567",
+        "author": {
+          "name": "Анастасия Б.",
+          "publicId": "h6gm252m3de8eqc3844u8bajhg",
+          "avatarUrl": "https://avatars.mds.yandex.net/get-yapic/27274/TS2ElU2qSjIPKgATtMf1FcUv0-1/{size}",
+          "professionLevel": "Знаток города 5 уровня",
+          "rtb": "Знаток города 5 уровня",
+          "rtbType": "PROFESSION",
+          "isSubscribed": false,
+          "achievements": [],
+          "professions": []
+        },
+        "text": "обратилась за заменой ретейнера. Усатова Анастасия Сергеевна выполнила работу быстро и качественно.",
+        "textLanguage": "ru",
+        "textTranslations": {
+          "tr": "Tutucuyu değiştirmek için başvurdum. Usatova Anastasia Sergeevna işi hızlı ve verimli bir şekilde yaptı."
+        },
+        "rating": 5,
+        "updatedTime": "2026-04-23T08:25:51.093Z",
+        "businessComment": {
+          "text": "Спасибо за ваш отклик",
+          "updatedTime": "2026-04-29T10:47:19.316Z"
+        },
+        "reactions": {"likes": 0, "dislikes": 0, "userReaction": "NONE"},
+        "photos": [],
+        "videos": []
+      },
+      {
+        "reviewId": "y4J215KpeI5xR8srbuxIzI2DnivhVr59B",
+        "businessId": "82071161567",
+        "author": {
+          "name": "Марина А.",
+          "publicId": "p8ygqemzehnbfj4fc3uz1e09qr",
+          "professionLevel": "Знаток города 7 уровня",
+          "rtbType": "PROFESSION"
+        },
+        "text": "Очень приятная клиника, приветливый и улыбчивый персонал.",
+        "rating": 5,
+        "updatedTime": "2026-03-18T06:35:45.334Z",
+        "photos": [
+          {
+            "type": "photo",
+            "id": "18785127_2a0000019cffa851da627aae6c8ca183f1e8",
+            "businessId": "82071161567",
+            "urlTemplate": "https://avatars.mds.yandex.net/get-altay/18785127/2a0000019cffa851da627aae6c8ca183f1e8/{size}",
+            "createdTime": 1773815749167
+          }
+        ],
+        "videos": []
+      },
+      {
+        "reviewId": "TjgxHThS3_rtPg4jqWWbrGB0rxHxrNd",
+        "businessId": "82071161567",
+        "rating": 4
+      }
+    ]
+  }
+}
