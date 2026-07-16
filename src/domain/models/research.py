@@ -94,7 +94,7 @@ class ResearchTaskStatus(BaseModel):
     """Status response for a research task"""
 
     task_id: str
-    status: Literal["pending", "running", "completed", "failed"]
+    status: Literal["pending", "running", "completed", "failed", "queued_waiting_llm"]
     progress: Optional[dict] = None
     result: Optional[ResearchReport] = None
     created_at: str

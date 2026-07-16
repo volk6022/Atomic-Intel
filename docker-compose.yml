@@ -1,13 +1,38 @@
 services:
+  postgres:
+    image: postgres:15
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER:-atomic}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-change_me}
+      - POSTGRES_DB=${POSTGRES_DB:-atomic_intel}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      # Applied once, on a fresh (empty) data volume — see infra/db/init.sql
+      # header comment for how to evolve the schema afterwards.
+      - ./infra/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-atomic} -d ${POSTGRES_DB:-atomic_intel}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    mem_limit: 512m
+    networks:
+      - scraper-network
+
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     ports:
       - "16379:6379"
+    volumes:
+      - redis-data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
+    mem_limit: 256m
     networks:
       - scraper-network
 
@@ -15,15 +40,26 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    restart: unless-stopped
     ports:
       - "8000:8000"
+    # LLM config (ORCHESTRATION_*/EXTRACTION_*) + any other app settings come
+    # from .env. Explicit `environment:` below overrides these for the few vars
+    # that must point at compose service names (redis/postgres hosts).
+    env_file:
+      - .env
     environment:
       - REDIS_URL=redis://redis:6379
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-atomic}:${POSTGRES_PASSWORD:-change_me}@postgres:5432/${POSTGRES_DB:-atomic_intel}
+      - API_KEY=${API_KEY:-default_internal_key}
+      - RESEARCH_STORE_DIR=/data/research
       - PYTHONUNBUFFERED=1
     depends_on:
       redis:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/healthz"]
@@ -31,15 +67,24 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+    mem_limit: 2g
     networks:
       - scraper-network
     volumes:
       - ./proxies.txt:/app/proxies.txt:ro
+      # Shared with `worker` — durable ResearchReport JSON survives the 24h
+      # Redis TTL; both services must read/write the same path.
+      - research-data:/data/research
 
   worker:
     build:
       context: .
       dockerfile: Dockerfile
+    restart: unless-stopped
+    # LLM config (ORCHESTRATION_*/EXTRACTION_*) from .env; explicit env below
+    # overrides the redis/postgres host vars to point at compose services.
+    env_file:
+      - .env
     # Prod worker imports only public task modules. Excluded: session_actor +
     # cleanup_worker (DSL sessions = dev-only, stripped in M2) and workers.py (demo).
     command: ["uv", "run", "taskiq", "worker", "src.infrastructure.queue.broker:broker", "src.infrastructure.queue.research_task", "src.infrastructure.queue.monitor_worker"]
@@ -47,15 +92,54 @@ services:
       - REDIS_URL=redis://redis:6379
       - REDIS_HOST=redis
       - REDIS_PORT=6379
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-atomic}:${POSTGRES_PASSWORD:-change_me}@postgres:5432/${POSTGRES_DB:-atomic_intel}
+      - RESEARCH_STORE_DIR=/data/research
       - PYTHONUNBUFFERED=1
+    # Worker runs no HTTP server — disable the image's inherited HTTP healthcheck.
+    healthcheck:
+      disable: true
     depends_on:
       redis:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
+    mem_limit: 2g
     networks:
       - scraper-network
     volumes:
       - ./proxies.txt:/app/proxies.txt:ro
+      # Shared with `api` — the worker writes the durable report here on
+      # task completion, the api reads it back after Redis's 24h TTL expires.
+      - research-data:/data/research
+
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    command: ["uv", "run", "python", "-m", "src.bot.main"]
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-atomic}:${POSTGRES_PASSWORD:-change_me}@postgres:5432/${POSTGRES_DB:-atomic_intel}
+      - BOT_TOKEN=${BOT_TOKEN}
+      - ADMIN_TG_IDS=${ADMIN_TG_IDS}
+      - PYTHONUNBUFFERED=1
+    # Bot runs no HTTP server — disable the image's inherited HTTP healthcheck.
+    healthcheck:
+      disable: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+    mem_limit: 256m
+    networks:
+      - scraper-network
 
 networks:
   scraper-network:
     driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:
+  research-data:

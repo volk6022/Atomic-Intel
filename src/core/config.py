@@ -3,6 +3,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
+    # Bootstrap/admin key — always resolves to a synthetic Principal without
+    # touching Postgres (see src/api/auth.py). Real tenants come from the DB.
     API_KEY: str = "default_internal_key"
     REDIS_URL: str = "redis://localhost:6379"
     REDIS_HOST: str = "localhost"
@@ -10,6 +12,22 @@ class Settings(BaseSettings):
 
     # API Server
     PORT: int = 8000
+
+    # --- Control-plane: tenants/keys (Postgres) ---
+    DATABASE_URL: str = "postgresql+asyncpg://atomic:atomic@localhost:5432/atomic_intel"
+    POSTGRES_USER: str = "atomic"
+    POSTGRES_PASSWORD: str = "change_me"
+    POSTGRES_DB: str = "atomic_intel"
+    # How long a resolved tenant is cached in-process before the DB is re-hit.
+    AUTH_CACHE_TTL_SECONDS: float = 30.0
+    # Defaults used by the TG bot when issuing a new tenant (Ivan can override
+    # per-tenant afterwards via /setquota, /setconcurrency).
+    DEFAULT_TENANT_QUOTA_PER_HOUR: int = 500
+    DEFAULT_TENANT_CONCURRENT_RESEARCH: int = 2
+
+    # --- TG admin bot (src/bot/) ---
+    BOT_TOKEN: str = ""
+    ADMIN_TG_IDS: str = ""  # CSV of Telegram numeric user ids allowed to use the bot
 
     # Extraction Settings (e.g., Jina Reader LM)
     EXTRACTION_API_BASE: str = "http://localhost:1234/v1"
@@ -27,7 +45,15 @@ class Settings(BaseSettings):
     MAX_CONCURRENT_RESEARCH_TASKS: int = Field(default=5, ge=1, le=100)
 
     # Rate Limiting Settings
+    # NOTE: no longer read by src/api/middleware/rate_limit.py (bug C-01 fix —
+    # the middleware now enforces per-tenant quota_per_hour, not a per-target-
+    # domain rule keyed on the API's own inbound Host header). Kept as a
+    # reserved knob for a future *outbound* politeness limiter in the
+    # scraping/action layer, which is a distinct concern from caller quota.
     RATE_LIMIT_YANDEX_PER_HOUR: int = 30
+    # Fallback quota for the bootstrap admin key (see API_KEY above) and the
+    # default ceiling the rate-limit middleware falls back to if a rule ever
+    # can't resolve a tenant-specific number.
     RATE_LIMIT_DEFAULT_PER_HOUR: int = 1000
 
     # Monitoring / Catalog scrapers (promoted from experiment_monitoring/)
@@ -93,6 +119,23 @@ class Settings(BaseSettings):
     # skip blocking for these social SPAs.
     RESEARCH_BROWSER_BLOCK_SKIP_DOMAINS: str = "vk.com,instagram.com,facebook.com,ok.ru"
     RESEARCH_PROMPTS_PATH: str = "src/actions/research/research_agent_prompts.yaml"
+
+    # --- M3: LLM-availability gate + durable research store ---
+    # Supervisor drain-loop cadence (how often the worker re-probes endpoints
+    # that currently have tasks parked in `queued_waiting_llm`).
+    LLM_HEALTH_POLL_INTERVAL_SECONDS: float = 30.0
+    # Per-probe timeout — a hung/unresponsive LLM must not block the poller.
+    LLM_HEALTH_PING_TIMEOUT_SECONDS: float = 5.0
+    # Pre-flight checks (one per task, before the agent runs) share a single
+    # probe per endpoint within this window instead of hitting the LLM once
+    # per task when many tasks queue up behind the same endpoint.
+    LLM_HEALTH_PROBE_CACHE_SECONDS: float = 15.0
+    # Durable disk fallback for completed ResearchReports, written alongside
+    # the 24h-TTL Redis copy so GET /research/status/{id} still resolves after
+    # Redis evicts it. Relative to cwd (repo root locally, /app in Docker);
+    # override to an absolute path (e.g. /data/research) when mounting a
+    # shared volume between the api and worker containers.
+    RESEARCH_STORE_DIR: str = "data/research"
 
     model_config = SettingsConfigDict(env_file=".env")
 

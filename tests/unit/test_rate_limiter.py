@@ -108,15 +108,17 @@ async def test_middleware_has_rate_limit_handler():
 
 
 @pytest.mark.asyncio
-async def test_middleware_initializes_with_rules():
-    """Middleware should initialize with default rules."""
+async def test_middleware_no_longer_uses_domain_rules():
+    """C-01 fix: quota is per-tenant now, not a per-domain rule list.
+
+    The middleware used to key its token bucket on the API's own inbound Host
+    header via a `*.yandex.*` / `*` rule table (bug C-01 — this never rate
+    limited callers correctly, since the Host header is the API's own domain,
+    never a scrape target). It now resolves the caller's tenant and enforces
+    that tenant's `quota_per_hour`; there is no domain-pattern rule list left.
+    """
     from src.api.middleware.rate_limit import RateLimitMiddleware
-    from src.core.config import settings
 
     middleware = RateLimitMiddleware(app=Mock())
-    assert len(middleware.rules) > 0
-    yandex_rule = next(
-        (r for r in middleware.rules if r["pattern"] == "*.yandex.*"), None
-    )
-    assert yandex_rule is not None
-    assert yandex_rule["requests_per_hour"] == settings.RATE_LIMIT_YANDEX_PER_HOUR
+    assert not hasattr(middleware, "rules")
+    assert hasattr(middleware, "_enabled")

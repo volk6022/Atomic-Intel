@@ -26,10 +26,28 @@ def get_extraction_client() -> LLMFacade:
     )
 
 
-def get_orchestration_client() -> LLMFacade:
+def get_orchestration_client(
+    tenant_llm_config: Optional[Dict[str, Any]] = None,
+) -> LLMFacade:
+    """Build the reasoning/navigation LLM client for a research run.
+
+    BYO-LLM: ``tenant_llm_config`` is the tenant's ``llm_provider_config``
+    (``{base_url, api_key, model}``), threaded in from the taskiq task payload
+    (see ``src.infrastructure.queue.research_task``). A missing/partial config
+    falls back to the global ``ORCHESTRATION_*`` settings.
+    """
     from src.infrastructure.external_api.clients.openai_client import (
         OpenAICompatibleClient,
     )
+
+    if tenant_llm_config:
+        base_url = tenant_llm_config.get("base_url")
+        api_key = tenant_llm_config.get("api_key")
+        model = tenant_llm_config.get("model")
+        if base_url and api_key and model:
+            return OpenAICompatibleClient(
+                base_url=base_url, api_key=api_key, model_name=model
+            )
 
     return OpenAICompatibleClient(
         base_url=settings.ORCHESTRATION_API_BASE,

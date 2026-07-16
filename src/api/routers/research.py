@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
 from src.api.auth import get_api_key
-from src.core.config import settings
+from src.domain.models.principal import Principal
 from src.domain.models.research import (
     ResearchRequest,
     ResearchTaskCreateResponse,
@@ -49,13 +49,13 @@ def _now_iso() -> str:
 )
 async def run_research(
     request: ResearchRequest,
-    api_key: str = Depends(get_api_key),
+    principal: Principal = Depends(get_api_key),
 ):
-    concurrent = await get_concurrent_task_count(api_key)
-    if concurrent >= settings.MAX_CONCURRENT_RESEARCH_TASKS:
+    concurrent = await get_concurrent_task_count(principal.tenant_id)
+    if concurrent >= principal.concurrent_research:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Maximum {settings.MAX_CONCURRENT_RESEARCH_TASKS} concurrent tasks allowed",
+            detail=f"Maximum {principal.concurrent_research} concurrent tasks allowed",
         )
 
     task_id = str(uuid.uuid4())
@@ -63,10 +63,19 @@ async def run_research(
 
     set_task(task_id, {
         "task_id": task_id,
+        "tenant_id": principal.tenant_id,
         "query": request.query,
         "mode": request.mode,
         "language": request.language,
         "output_schema": request.output_schema,
+        # BYO-LLM: threaded through Redis (not a request-scoped global) so the
+        # taskiq worker — a separate process — can honor this tenant's
+        # endpoint. None = fall back to global ORCHESTRATION_* settings.
+        "llm_provider_config": (
+            principal.llm_provider_config.to_dict()
+            if principal.llm_provider_config
+            else None
+        ),
         "status": "running",
         "phase": "starting",
         "iteration": 0,
@@ -97,7 +106,7 @@ async def run_research(
 @router.get("/status/{task_id}", response_model=ResearchTaskStatus)
 async def get_research_status(
     task_id: str,
-    api_key: str = Depends(get_api_key),
+    principal: Principal = Depends(get_api_key),
 ):
     task = get_task(task_id)
     if not task:
@@ -136,7 +145,7 @@ def _sse(event: str, data: dict | str) -> str:
 @router.get("/stream/{task_id}")
 async def stream_research_events(
     task_id: str,
-    api_key: str = Depends(get_api_key),
+    principal: Principal = Depends(get_api_key),
 ):
     task = get_task(task_id)
     if not task:

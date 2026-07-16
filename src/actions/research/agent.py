@@ -667,8 +667,14 @@ async def run_research(
     output_schema: dict | None = None,
     max_turns: int | None = None,
     max_tokens: int | None = None,
+    llm_provider_config: dict | None = None,
 ) -> dict:
-    """Run the flat-loop research agent and return a ``ResearchReport``-shaped dict."""
+    """Run the flat-loop research agent and return a ``ResearchReport``-shaped dict.
+
+    ``llm_provider_config`` is the tenant's BYO-LLM config (``{base_url,
+    api_key, model}``), if any — ``None`` runs on the global orchestration
+    settings. See ``src.infrastructure.external_api.facade.get_orchestration_client``.
+    """
     prompts = load_prompts()
     preset = get_mode_preset(mode)
 
@@ -697,7 +703,7 @@ async def run_research(
         if d.strip()
     }
 
-    client = get_orchestration_client()
+    client = get_orchestration_client(llm_provider_config)
     tools, submit_name = build_tools(output_schema)
     keywords = _keywords(query, output_schema)
 

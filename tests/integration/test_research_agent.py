@@ -65,7 +65,7 @@ async def test_run_research_free_form_smoke(monkeypatch):
     from src.domain.models.research import ResearchReport
 
     fake = _FakeClient(submit_name="submit_answer")
-    monkeypatch.setattr(agent, "get_orchestration_client", lambda: fake)
+    monkeypatch.setattr(agent, "get_orchestration_client", lambda *_a, **_kw: fake)
 
     async def fake_search(query, k=5, language=None):
         return [{"url": "https://example.com", "title": "SearXNG", "snippet": "metasearch"}]
@@ -133,7 +133,7 @@ async def test_run_research_schema_smoke(monkeypatch):
             return {"content": "", "tool_calls": [tc], "usage": usage}
 
     fake = _SchemaClient(submit_name="submit_result")
-    monkeypatch.setattr(agent, "get_orchestration_client", lambda: fake)
+    monkeypatch.setattr(agent, "get_orchestration_client", lambda *_a, **_kw: fake)
 
     async def fake_search(query, k=5, language=None):
         return [{"url": "https://example.com", "title": "SearXNG", "snippet": "metasearch"}]

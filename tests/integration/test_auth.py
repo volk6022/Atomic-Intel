@@ -5,7 +5,6 @@ Tests authentication middleware with real FastAPI app.
 """
 
 import pytest
-from unittest.mock import AsyncMock, patch
 from httpx import AsyncClient, ASGITransport
 from src.api.main import app
 
@@ -50,54 +49,6 @@ class TestAuthOnProtectedEndpoints:
                 json={"url": "https://example.com"},
                 headers={"X-API-Key": "invalid_key_12345"},
             )
-            assert response.status_code == 403
-
-
-class TestAuthOnSessionEndpoints:
-    """Test authentication on session endpoints"""
-
-    @pytest.mark.asyncio
-    async def test_create_session_requires_auth(self):
-        """Session creation should require authentication"""
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.post("/sessions", json={})
-            assert response.status_code == 403
-
-    @pytest.mark.asyncio
-    async def test_create_session_accepts_valid_key(self):
-        """Session creation should accept valid API key"""
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            with patch(
-                "src.infrastructure.queue.session_actor.run_session_actor.kiq",
-                new_callable=AsyncMock,
-                return_value=AsyncMock(),
-            ):
-                response = await client.post(
-                    "/sessions",
-                    headers=VALID_AUTH_HEADER,
-                    json={},
-                )
-                assert response.status_code in [200, 503]
-
-    @pytest.mark.asyncio
-    async def test_command_endpoint_requires_auth(self):
-        """Command endpoint should require authentication"""
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.post(
-                "/sessions/test-session/command",
-                json={"type": "goto", "params": {"url": "https://example.com"}},
-            )
-            assert response.status_code == 403
-
-    @pytest.mark.asyncio
-    async def test_delete_session_requires_auth(self):
-        """Delete session should require authentication"""
-        transport = ASGITransport(app=app)
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            response = await client.delete("/sessions/test-session")
             assert response.status_code == 403
 
 
@@ -163,20 +114,20 @@ class TestPublicEndpoints:
             assert response.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_docs_is_public(self):
-        """API docs should be publicly accessible"""
+    async def test_docs_are_disabled(self):
+        """Interactive docs are disabled in the public build (M2 strip)."""
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.get("/docs")
-            assert response.status_code == 200
+            assert response.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_openapi_is_public(self):
-        """OpenAPI schema should be publicly accessible"""
+    async def test_openapi_schema_is_disabled(self):
+        """OpenAPI schema is disabled in the public build (M2 strip)."""
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             response = await client.get("/openapi.json")
-            assert response.status_code == 200
+            assert response.status_code == 404
 
 
 class TestAuthErrorFormat:
