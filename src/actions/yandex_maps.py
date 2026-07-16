@@ -226,7 +226,7 @@ async def _one_get(url: str, proxy: Optional[str]) -> str:
 async def _http_get_html(url: str, *, tries: int = 20) -> str:
     """GET a Yandex SSR page, rotating proxies SEQUENTIALLY one at a time.
 
-    The puls-proxy pool is concurrency-capped — firing many proxies at once trips
+    The proxy pool is concurrency-capped — firing many proxies at once trips
     the cap and turns live ports into timeouts. Sequential with a short connect
     timeout is both reliable and cheap: dead/unprovisioned ports are abandoned in
     ~5 s, live ports answer in ~4-5 s.

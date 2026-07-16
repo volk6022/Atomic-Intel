@@ -69,7 +69,7 @@ Call-site'ы:
 
 `searxng/settings.yml` содержит:
 
-- `outgoing.proxies.all://` — pool из 20 `socks5h://...@np.puls-proxy.com:11000-11009`
+- `outgoing.proxies.all://` — pool из 20 `socks5h://...@proxy-host.example.com:11000-11009`
   (10 `cr.ru` + 10 `cr.pl`, sessttl.10 минут). SearXNG ротирует round-robin'ом.
 - `outgoing.request_timeout: 8.0`, `max_request_timeout: 12.0`,
   `extra_proxy_timeout: 5` — выверено экспериментом.

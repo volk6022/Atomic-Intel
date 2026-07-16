@@ -7,7 +7,7 @@ Generalises the rotation pattern inlined in ``src/actions/yandex_maps.py``
 Design notes:
 * Proxies come from the existing :data:`proxy_provider` (same ``proxies.txt``),
   so there is one source of truth for the pool.
-* The puls-proxy pool is concurrency-capped, so rotation is **sequential** with a
+* The proxy pool is concurrency-capped, so rotation is **sequential** with a
   short connect timeout: dead ports are benched (TTL) and abandoned in ~5 s.
 * ``use_proxy=False`` (the default, ``MONITOR_USE_PROXY``) does a plain direct
   request — most sources (fl/kwork/superjob/habr/zarplata) pass anti-bot without

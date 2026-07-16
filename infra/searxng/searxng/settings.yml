@@ -1,6 +1,6 @@
 # SearXNG settings — production-инстанс для Atomic-Scraper-Service.
 # Минимальный override: включаем JSON API, выключаем limiter, направляем
-# исходящий трафик через pool из 20 puls socks5.
+# исходящий трафик через pool из 20 socks5.
 #
 # Подтверждено прогонами в serp_experiment/REPORT_searxng.md (прогон 9):
 #   VPN на хосте + этот pool + retries=2 в клиенте → 95.3% success.
@@ -43,7 +43,7 @@ ui:
   query_in_title: false
   default_theme: simple
 
-# Per-request ротация через puls rotation-порт 823 (http). Каждый запрос —
+# Per-request ротация через rotation-порт 823 (http). Каждый запрос —
 # новый exit-IP: бан/мёртвый IP не залипает (sticky-пул 11000-11009 раньше
 # держал выжженный IP 10 минут, и все ретраи били в него же). Замер
 # 2026-06-12: ротация 7/10 живых (7 уникальных IP), sticky 5/10.
