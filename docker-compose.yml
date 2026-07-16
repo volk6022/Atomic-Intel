@@ -18,6 +18,7 @@ services:
     ports:
       - "8000:8000"
     environment:
+      - REDIS_URL=redis://redis:6379
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - PYTHONUNBUFFERED=1
@@ -39,8 +40,11 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
-    command: ["uv", "run", "taskiq", "worker", "src.infrastructure.queue.broker:broker", "src.infrastructure.queue.tasks"]
+    # Prod worker imports only public task modules. Excluded: session_actor +
+    # cleanup_worker (DSL sessions = dev-only, stripped in M2) and workers.py (demo).
+    command: ["uv", "run", "taskiq", "worker", "src.infrastructure.queue.broker:broker", "src.infrastructure.queue.research_task", "src.infrastructure.queue.monitor_worker"]
     environment:
+      - REDIS_URL=redis://redis:6379
       - REDIS_HOST=redis
       - REDIS_PORT=6379
       - PYTHONUNBUFFERED=1
