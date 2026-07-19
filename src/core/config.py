@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     # --- TG admin bot (src/bot/) ---
     BOT_TOKEN: str = ""
     ADMIN_TG_IDS: str = ""  # CSV of Telegram numeric user ids allowed to use the bot
+    # Single super-admin id, stricter than ADMIN_TG_IDS: the only one allowed to
+    # repoint the shared house-LLM endpoint (/sethousellm). 0 = disabled.
+    SUPERADMIN_TG_ID: int = 0
 
     # Extraction Settings (e.g., Jina Reader LM)
     EXTRACTION_API_BASE: str = "http://localhost:1234/v1"

@@ -14,7 +14,11 @@ from src.core.logging import get_logger
 from src.infrastructure.db.keys import generate_raw_key, hash_api_key
 from src.infrastructure.db.session import session_scope
 from src.infrastructure.db.tenant_repository import TenantNotFoundError, TenantRepository
-from src.infrastructure.tasks.research_store import get_concurrent_task_count
+from src.infrastructure.tasks.research_store import (
+    get_concurrent_task_count,
+    house_llm_base_url,
+    set_setting,
+)
 
 logger = get_logger(__name__)
 router = Router(name="tenants")
@@ -30,7 +34,35 @@ HELP_TEXT = (
     "/clearllm &lt;name&gt; — fall back to the global orchestration LLM\n"
     "/usage &lt;name&gt; — quota, concurrency, running tasks, BYO-LLM status\n"
     "/listtenants — list all tenants\n"
+    "/sethousellm &lt;base_url&gt; — set the shared house-LLM endpoint "
+    "(super-admin only; e.g. a rotating tunnel URL)\n"
 )
+
+
+@router.message(Command("sethousellm"))
+async def cmd_sethousellm(message: Message, command: CommandObject) -> None:
+    """Super-admin-only: override the house (non-BYO) LLM base URL at runtime.
+
+    The house endpoint (Ivan's laptop llama-server behind a tunnel) can change
+    URL on every restart; this lets the operator repoint it without a redeploy.
+    Only the single ``SUPERADMIN_TG_ID`` may run it — stricter than the general
+    admin allowlist, since it steers every non-BYO tenant's traffic."""
+    uid = message.from_user.id if message.from_user else None
+    if not settings.SUPERADMIN_TG_ID or uid != settings.SUPERADMIN_TG_ID:
+        await message.answer("Only the super-admin can set the house-LLM endpoint.")
+        return
+    url = (command.args or "").strip()
+    if not url:
+        await message.answer(
+            "Usage: /sethousellm &lt;base_url&gt;\n"
+            f"Current: <code>{house_llm_base_url()}</code>"
+        )
+        return
+    set_setting("house_llm_base_url", url)
+    await message.answer(
+        f"House-LLM endpoint set to <code>{url}</code>\n"
+        "The supervisor + new research runs pick it up within one poll interval."
+    )
 
 
 @router.message(Command("start", "help"))

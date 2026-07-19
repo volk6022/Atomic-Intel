@@ -98,6 +98,30 @@ async def execute_research_task(task_id: str):
             llm_provider_config=llm_provider_config,
         )
 
+        # Mid-flight LLM loss: the agent doesn't raise when the endpoint dies
+        # mid-run — it degrades to a partial answer and returns. If some LLM
+        # calls failed AND the endpoint is now unreachable, that "completed"
+        # report is unreliable: re-park so the supervisor re-runs it on
+        # recovery (restart semantics) instead of handing back a degraded result.
+        totals = (
+            (((final_report or {}).get("stats") or {}).get("perf") or {}).get("totals")
+            or {}
+        )
+        if totals.get("llm_failed_calls") and not await check_llm_reachable(
+            llm_provider_config, force=True
+        ):
+            logger.warning(
+                "Research task %s re-parked: LLM unreachable at run end (degraded result)",
+                task_id,
+            )
+            set_task(task_id, {
+                "status": "queued_waiting_llm",
+                "phase": "waiting_llm",
+                "llm_endpoint_key": endpoint_key(llm_provider_config),
+                "updated_at": _now_iso(),
+            })
+            return {"task_id": task_id, "status": "queued_waiting_llm"}
+
         set_task(task_id, {
             "status": "completed",
             "phase": "completed",
@@ -109,6 +133,18 @@ async def execute_research_task(task_id: str):
 
     except Exception as e:
         logger.exception("Research task failed: %s", task_id)
+        # Distinguish a genuine agent error from the LLM vanishing mid-run: if
+        # the endpoint is now unreachable, park (re-runs on recovery) rather
+        # than marking the task failed.
+        if not await check_llm_reachable(llm_provider_config, force=True):
+            logger.warning("Research task %s re-parked: LLM lost mid-run", task_id)
+            set_task(task_id, {
+                "status": "queued_waiting_llm",
+                "phase": "waiting_llm",
+                "llm_endpoint_key": endpoint_key(llm_provider_config),
+                "updated_at": _now_iso(),
+            })
+            return {"task_id": task_id, "status": "queued_waiting_llm"}
         set_task(task_id, {
             "status": "failed",
             "error": str(e),

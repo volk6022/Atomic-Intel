@@ -45,7 +45,9 @@ def endpoint_key(llm_provider_config: Optional[dict[str, Any]]) -> str:
         base_url = llm_provider_config.get("base_url")
         if base_url:
             return str(base_url)
-    return settings.ORCHESTRATION_API_BASE
+    from src.infrastructure.tasks.research_store import house_llm_base_url
+
+    return house_llm_base_url()
 
 
 async def _ping(llm_provider_config: Optional[dict[str, Any]]) -> bool:
@@ -59,11 +61,13 @@ async def _ping(llm_provider_config: Optional[dict[str, Any]]) -> bool:
     and surfaces later as a normal `failed` task rather than
     `queued_waiting_llm`.
     """
+    from src.infrastructure.tasks.research_store import house_llm_base_url
+
     if llm_provider_config:
-        base_url = llm_provider_config.get("base_url") or settings.ORCHESTRATION_API_BASE
+        base_url = llm_provider_config.get("base_url") or house_llm_base_url()
         api_key = llm_provider_config.get("api_key") or settings.ORCHESTRATION_API_KEY
     else:
-        base_url = settings.ORCHESTRATION_API_BASE
+        base_url = house_llm_base_url()
         api_key = settings.ORCHESTRATION_API_KEY
 
     url = f"{base_url.rstrip('/')}/models"
@@ -112,6 +116,7 @@ async def run_supervisor_once() -> dict[str, int]:
     from src.infrastructure.tasks.research_store import (
         get_tasks_waiting_for_llm,
         set_task,
+        try_claim_drain,
     )
 
     waiting = await get_tasks_waiting_for_llm()
@@ -137,6 +142,11 @@ async def run_supervisor_once() -> dict[str, int]:
 
         for task in group:
             task_id = task["task_id"]
+            # Single-flight: the supervisor runs in every worker process, so
+            # only the one that claims the task re-enqueues it (else both
+            # workers would run the same drained task).
+            if not try_claim_drain(task_id):
+                continue
             set_task(task_id, {
                 "status": "running",
                 "phase": "starting",

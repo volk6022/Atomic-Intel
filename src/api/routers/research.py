@@ -42,6 +42,16 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
+def _owns_task(principal: Principal, task: dict) -> bool:
+    """Tenant isolation for status/stream reads: a tenant may only see its own
+    tasks (matched on the ``tenant_id`` stamped at creation). The bootstrap
+    admin key can read any task. Returned as 404 (not 403) so task existence
+    isn't leaked across tenants."""
+    if getattr(principal, "is_bootstrap", False):
+        return True
+    return task.get("tenant_id") == principal.tenant_id
+
+
 @router.post(
     "/run",
     response_model=ResearchTaskCreateResponse,
@@ -109,7 +119,7 @@ async def get_research_status(
     principal: Principal = Depends(get_api_key),
 ):
     task = get_task(task_id)
-    if not task:
+    if not task or not _owns_task(principal, task):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Task not found or expired",
@@ -148,7 +158,7 @@ async def stream_research_events(
     principal: Principal = Depends(get_api_key),
 ):
     task = get_task(task_id)
-    if not task:
+    if not task or not _owns_task(principal, task):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Task not found or expired",

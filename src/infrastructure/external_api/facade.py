@@ -49,8 +49,12 @@ def get_orchestration_client(
                 base_url=base_url, api_key=api_key, model_name=model
             )
 
+    # House (non-BYO) fallback: base URL may be overridden at runtime via the
+    # bot's /sethousellm (e.g. a rotating tunnel URL); api_key/model stay env.
+    from src.infrastructure.tasks.research_store import house_llm_base_url
+
     return OpenAICompatibleClient(
-        base_url=settings.ORCHESTRATION_API_BASE,
+        base_url=house_llm_base_url(),
         api_key=settings.ORCHESTRATION_API_KEY,
         model_name=settings.ORCHESTRATION_MODEL_NAME,
     )

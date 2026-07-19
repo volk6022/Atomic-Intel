@@ -31,6 +31,12 @@ _TTL_SECONDS = 24 * 3600
 _ACTIVE_STATUSES = {"running", "queued_waiting_llm"}
 
 _local_fallback: dict[str, dict] = {}
+# Runtime key/value settings (e.g. the operator-set house-LLM endpoint) shared
+# across api + worker via Redis; process-local mirror for the no-Redis path.
+_local_settings: dict[str, str] = {}
+
+_SETTINGS_PREFIX = "settings:"
+_DRAIN_LOCK_PREFIX = "drainlock:"
 
 
 def _key(task_id: str) -> str:
@@ -194,6 +200,53 @@ async def get_concurrent_task_count(tenant_id: str) -> int:
             for t in _local_fallback.values()
             if t.get("status") in _ACTIVE_STATUSES and t.get("tenant_id") == tenant_id
         )
+
+
+def get_setting(key: str) -> Optional[str]:
+    """Read a runtime setting (Redis-first, local mirror on miss/failure)."""
+    r = _get_redis()
+    if r is None:
+        return _local_settings.get(key)
+    try:
+        val = r.get(f"{_SETTINGS_PREFIX}{key}")
+        return val if val is not None else _local_settings.get(key)
+    except Exception as e:
+        logger.error("research_store.get_setting failed for %s: %s", key, e)
+        return _local_settings.get(key)
+
+
+def set_setting(key: str, value: str) -> None:
+    """Persist a runtime setting (both Redis and the local mirror)."""
+    _local_settings[key] = value
+    r = _get_redis()
+    if r is not None:
+        try:
+            r.set(f"{_SETTINGS_PREFIX}{key}", value)
+        except Exception as e:
+            logger.error("research_store.set_setting failed for %s: %s", key, e)
+
+
+def house_llm_base_url() -> str:
+    """Effective house (non-BYO) LLM base URL: the operator-set override from
+    ``/sethousellm`` if present, else the static ``ORCHESTRATION_API_BASE`` env.
+    Lets the house endpoint (e.g. a rotating tunnel URL) change at runtime
+    without a redeploy."""
+    return get_setting("house_llm_base_url") or settings.ORCHESTRATION_API_BASE
+
+
+def try_claim_drain(task_id: str, ttl_seconds: int = 120) -> bool:
+    """Single-flight guard for the drain pass. The supervisor runs in *every*
+    worker process; without this, each independently re-enqueues the same
+    parked task. Returns True only for the first caller to claim the task.
+    No Redis (single-process tests) → always True."""
+    r = _get_redis()
+    if r is None:
+        return True
+    try:
+        return bool(r.set(f"{_DRAIN_LOCK_PREFIX}{task_id}", "1", nx=True, ex=ttl_seconds))
+    except Exception as e:
+        logger.error("research_store.try_claim_drain failed for %s: %s", task_id, e)
+        return True
 
 
 def _json_default(obj):
