@@ -53,13 +53,18 @@ def endpoint_key(llm_provider_config: Optional[dict[str, Any]]) -> str:
 async def _ping(llm_provider_config: Optional[dict[str, Any]]) -> bool:
     """Single reachability probe.
 
-    Distinguishes "endpoint unreachable" (connection error / timeout ->
-    unhealthy, task should wait) from "endpoint reachable but erroring
-    otherwise" (any HTTP response, even 401/404/500, means something is
-    listening -> healthy). A misconfigured API key or model name on an
-    otherwise-live endpoint is a genuine task error, not an availability gap,
-    and surfaces later as a normal `failed` task rather than
-    `queued_waiting_llm`.
+    Healthy == the endpoint answered the model-list probe successfully (<400).
+    Unhealthy == connection error / timeout, OR any 4xx/5xx response.
+
+    The earlier rule ("any HTTP response means something is listening ->
+    healthy") was written for a directly-exposed llama endpoint and is wrong
+    for a tunnelled one: the tunnel edge answers even when the LLM behind it is
+    gone (502) or the tunnel itself is unregistered (404), so down-states
+    masqueraded as healthy and tasks completed with empty answers instead of
+    parking. Cost of the stricter rule: a genuinely-live endpoint that rejects
+    the probe (e.g. bad API key -> 401) now parks its tasks instead of failing
+    them; they drain automatically once the credentials are fixed, which is the
+    safer failure mode for a durable research queue.
     """
     from src.infrastructure.tasks.research_store import house_llm_base_url
 
@@ -77,10 +82,24 @@ async def _ping(llm_provider_config: Optional[dict[str, Any]]) -> bool:
         # asyncio.wait_for, so a hung endpoint (or a client bug) can never
         # block the supervisor loop past `timeout` seconds.
         async with httpx.AsyncClient(timeout=timeout) as client:
-            await asyncio.wait_for(
+            resp = await asyncio.wait_for(
                 client.get(url, headers={"Authorization": f"Bearer {api_key}"}),
                 timeout=timeout,
             )
+        # The status code MUST be inspected. "Got any HTTP response == up" only
+        # holds for a directly-exposed llama endpoint, where a dead server means
+        # connection-refused. Behind a tunnel (tuna.am) the edge always answers:
+        #   - llama dead, tunnel up  -> 502 "Ресурс не отвечает"
+        #   - tunnel itself down     -> 404 "Туннель не найден"
+        # Both are hard down-states, but as bare responses they used to read as
+        # "up", so nothing ever parked and tasks burned through returning empty
+        # answers. Treat only a successful response as up; 4xx/5xx park the task
+        # and the supervisor drains it once the endpoint really comes back.
+        if resp.status_code >= 400:
+            logger.warning(
+                "llm_health: endpoint %s down (HTTP %s)", base_url, resp.status_code
+            )
+            return False
         return True
     except Exception as e:  # noqa: BLE001 — any network failure means "down"
         logger.warning("llm_health: endpoint %s unreachable: %s", base_url, e)
