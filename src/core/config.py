@@ -58,6 +58,15 @@ class Settings(BaseSettings):
     # default ceiling the rate-limit middleware falls back to if a rule ever
     # can't resolve a tenant-specific number.
     RATE_LIMIT_DEFAULT_PER_HOUR: int = 1000
+    # READ bucket quota: per-tenant limit for read-only endpoints (status/stream).
+    # Separated from WORK quota (launches) so polling for results does not starve
+    # the ability to launch new tasks. Generous default (1000/hour) to allow
+    # normal polling patterns without abuse.
+    READ_QUOTA_PER_HOUR: int = 1000
+    # TTL for the per-task in-memory cache in /status and /stream endpoints.
+    # Reduces store reads during rapid polling, improving latency and store load.
+    # Short default (2s) to balance cache hit rate against freshness of task state.
+    STATUS_CACHE_TTL_SECONDS: float = 2.0
 
     # Monitoring / Catalog scrapers (promoted from experiment_monitoring/)
     # Most sources (fl/kwork/superjob/habr/zarplata) pass anti-bot via httpx-direct;

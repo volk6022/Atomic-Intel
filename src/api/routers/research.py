@@ -4,12 +4,14 @@ import asyncio
 import json
 import logging
 import uuid
+import time
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import StreamingResponse
 
 from src.api.auth import get_api_key
+from src.core.config import settings
 from src.domain.models.principal import Principal
 from src.domain.models.research import (
     ResearchRequest,
@@ -25,6 +27,59 @@ from src.infrastructure.tasks.research_store import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+class _TaskCache:
+    """Simple in-memory TTL cache for task payloads (store reads only).
+
+    Caches task objects fetched from the store to reduce repeated reads during
+    rapid polling (e.g., a client calling /status every 1-2s). Only caches the
+    payload; authorization checks (via _owns_task) ALWAYS run on the cached
+    copy so cross-tenant leaks cannot occur.
+
+    Eviction is lazy-on-hit PLUS a bounded sweep on insert. Lazy-on-hit alone is
+    not enough: a task polled once and then abandoned is never looked up again,
+    so its entry would live forever, and an entry holds a whole ResearchReport
+    (answer, sources, stats). Without the ceiling a long-lived API process
+    serving many tasks grows without bound.
+    """
+
+    _MAX_ENTRIES = 512
+
+    def __init__(self, ttl_seconds: float):
+        self._ttl = ttl_seconds
+        self._cache: dict[str, tuple[dict, float]] = {}  # task_id -> (task, expires_at)
+
+    def get(self, task_id: str) -> dict | None:
+        """Fetch from cache if hit and not expired; return None otherwise."""
+        if task_id not in self._cache:
+            return None
+        task, expires_at = self._cache[task_id]
+        if time.time() >= expires_at:
+            # Expired: evict lazily.
+            del self._cache[task_id]
+            return None
+        return task
+
+    def set(self, task_id: str, task: dict) -> None:
+        """Store task with expiry timestamp, sweeping if over budget."""
+        if len(self._cache) >= self._MAX_ENTRIES:
+            self._sweep()
+        self._cache[task_id] = (task, time.time() + self._ttl)
+
+    def _sweep(self) -> None:
+        """Drop expired entries; if still at the ceiling, drop the oldest."""
+        now = time.time()
+        for key in [k for k, (_, exp) in self._cache.items() if now >= exp]:
+            del self._cache[key]
+        overflow = len(self._cache) - self._MAX_ENTRIES + 1
+        if overflow > 0:
+            oldest = sorted(self._cache, key=lambda k: self._cache[k][1])[:overflow]
+            for key in oldest:
+                del self._cache[key]
+
+
+_task_cache = _TaskCache(settings.STATUS_CACHE_TTL_SECONDS)
 
 # Backwards-compat alias used by existing tests.
 get_research_task = get_task
@@ -118,7 +173,17 @@ async def get_research_status(
     task_id: str,
     principal: Principal = Depends(get_api_key),
 ):
-    task = get_task(task_id)
+    # Try cache first to avoid repeated store reads during polling.
+    task = _task_cache.get(task_id)
+    if task is None:
+        # Cache miss: read from store and cache for future polls.
+        task = get_task(task_id)
+        if task:
+            _task_cache.set(task_id, task)
+
+    # CRITICAL: _owns_task MUST run on every request (including cache hits) to
+    # prevent cross-tenant access via task UUID enumeration. Never cache the
+    # authorization decision; always check against the resolved tenant.
     if not task or not _owns_task(principal, task):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -157,7 +222,15 @@ async def stream_research_events(
     task_id: str,
     principal: Principal = Depends(get_api_key),
 ):
-    task = get_task(task_id)
+    # Initial ownership check: try cache, then store.
+    task = _task_cache.get(task_id)
+    if task is None:
+        task = get_task(task_id)
+        if task:
+            _task_cache.set(task_id, task)
+
+    # CRITICAL: _owns_task MUST run on every request (including cache hits) to
+    # prevent cross-tenant access via task UUID enumeration.
     if not task or not _owns_task(principal, task):
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -176,7 +249,13 @@ async def stream_research_events(
                 yield _sse("timeout", {"task_id": task_id})
                 break
 
-            current = get_task(task_id)
+            # Try cache first; if miss, read from store and cache.
+            current = _task_cache.get(task_id)
+            if current is None:
+                current = get_task(task_id)
+                if current:
+                    _task_cache.set(task_id, current)
+
             if not current:
                 yield _sse("error", {"task_id": task_id, "error": "Task disappeared"})
                 break
