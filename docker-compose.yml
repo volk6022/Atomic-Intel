@@ -122,6 +122,13 @@ services:
     command: ["uv", "run", "python", "-m", "src.bot.main"]
     environment:
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-atomic}:${POSTGRES_PASSWORD:-change_me}@postgres:5432/${POSTGRES_DB:-atomic_intel}
+      # The bot is a WRITER of runtime settings (/sethousellm -> settings:house_llm_base_url).
+      # Without these it falls back to config.py's redis://localhost:6379, which inside
+      # this container resolves to nothing, so set_setting() silently degrades to an
+      # in-process dict and the worker never sees the new house-LLM endpoint (M3.1 dead).
+      - REDIS_URL=redis://redis:6379
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
       - BOT_TOKEN=${BOT_TOKEN}
       - ADMIN_TG_IDS=${ADMIN_TG_IDS}
       - PYTHONUNBUFFERED=1
@@ -130,6 +137,8 @@ services:
       disable: true
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     mem_limit: 256m
     networks:
