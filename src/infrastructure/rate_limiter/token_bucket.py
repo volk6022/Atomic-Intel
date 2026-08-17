@@ -62,7 +62,15 @@ class TokenBucketRateLimiter:
 
         pipe = redis_client.pipeline()
         pipe.incr(key)
-        pipe.expire(key, window_seconds)
+        # nx=True: only set the TTL when the key has none yet, i.e. on the
+        # first request of a window. Without nx, expire ran on EVERY request
+        # and pushed the window out by a full hour each time - including the
+        # requests that were themselves being rejected with 429. Once a tenant
+        # hit the limit it could never get out: any attempt, even a polite
+        # Retry-After retry, re-armed the hour. Seen 2026-07-21 on
+        # for-research-local: counter stuck at 1047/1000, TTL only started
+        # draining after the client went completely silent.
+        pipe.expire(key, window_seconds, nx=True)
         results = await pipe.execute()
 
         new_count = results[0]
