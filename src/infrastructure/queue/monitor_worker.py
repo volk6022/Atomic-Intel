@@ -42,6 +42,15 @@ logger = get_logger(__name__)
 # enough that a stuck source costs one item rather than the sweep.
 DETAIL_TIMEOUT_S = 45.0
 
+# Ceilings for the two model calls. The shared client allows 120s per attempt and
+# retries twice, so an unresponsive provider costs six minutes per call and
+# twelve per item before anything gives up - which is exactly how long one sweep
+# sat on a single posting. The client's budget is right for research, where a
+# long answer is the product; here the sweep runs on a schedule and has to come
+# back before the next one starts.
+SCORE_TIMEOUT_S = 90.0
+DRAFT_TIMEOUT_S = 90.0
+
 
 def _csv(value: str) -> list[str]:
     return [x.strip() for x in value.split(",") if x.strip()]
@@ -88,12 +97,12 @@ async def _collect(source: str, limit: int):
 async def _enrich(source: str, item) -> dict:
     """Item plus whatever the detail step can add. Never raises, never hangs.
 
-    The timeout is not paranoia. ``detail`` goes through the hybrid fetch, which
-    falls back to Playwright when httpx trips anti-bot — and a browser that
-    cannot start does not raise, it waits. One such page used to stall the whole
-    sweep indefinitely, and in the scheduled path that wedges a worker slot for
-    good. A detail is an optimisation; the listing already carries enough to
-    score, so giving up on it is always better than blocking.
+    ``detail`` reaches the network twice — the page itself and, on fl, the offers
+    endpoint — and on anti-bot it renders the page in a browser. Each of those has
+    its own timeout, but nothing bounded the whole step, and an item that stops
+    responding in the scheduled path wedges a worker slot rather than failing. A
+    detail is an optimisation: the listing already carries enough to score, so
+    giving up on one is always better than blocking the sweep behind it.
     """
     payload = item.model_dump()
     try:
@@ -207,9 +216,22 @@ async def run_monitor_sweep(
                 continue
 
             try:
-                verdict = await scoring.score_item(
-                    client, payload, contour=contour
+                verdict = await asyncio.wait_for(
+                    scoring.score_item(client, payload, contour=contour),
+                    timeout=SCORE_TIMEOUT_S,
                 )
+            except asyncio.TimeoutError:
+                # Marked seen on purpose. Leaving it unseen is the right move when
+                # the whole chain is down and nothing could be scored, but a single
+                # posting the provider chokes on would come back every sweep and
+                # cost the same ninety seconds forever.
+                logger.warning(
+                    "monitor: scoring timed out after %ss for %s/%s",
+                    SCORE_TIMEOUT_S, source, item.id,
+                )
+                _log_drop(payload, "score_timeout", f"no reply in {SCORE_TIMEOUT_S:.0f}s")
+                monitor_store.mark_seen(source, [item.id])
+                continue
             except Exception as exc:  # noqa: BLE001 - a bad reply must not stall the sweep
                 logger.warning("monitor: scoring failed for %s/%s: %s", source, item.id, exc)
                 _log_drop(payload, "score_error", str(exc)[:200])
@@ -228,7 +250,18 @@ async def run_monitor_sweep(
             draft = ""
             notified = False
             if passed and notify_enabled:
-                draft = await scoring.draft_reply(client, payload, verdict)
+                try:
+                    draft = await asyncio.wait_for(
+                        scoring.draft_reply(client, payload, verdict),
+                        timeout=DRAFT_TIMEOUT_S,
+                    )
+                except asyncio.TimeoutError:
+                    # The card is worth sending without a draft; the link, the
+                    # brief and the score are the part that cannot be retyped.
+                    logger.warning(
+                        "monitor: draft timed out after %ss for %s/%s - sending without it",
+                        DRAFT_TIMEOUT_S, source, item.id,
+                    )
                 notified = await notify.send_notification(payload, verdict, draft)
                 if notified:
                     sent += 1

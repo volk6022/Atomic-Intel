@@ -113,10 +113,11 @@ class BaseSourceScraper(ABC):
         (e.g. hh.ru embeds its vacancy JSON after an initial network round-trip).
 
         The whole thing is bounded. ``page.goto`` has its own timeout, but the
-        steps before it do not: on an image with no browser binaries installed,
-        launching one waits forever rather than failing, and the caller is left
-        holding a coroutine that never returns. A blocked page has to look like
-        an error, not like silence.
+        steps around it do not: launching the shared browser, opening a context
+        and closing it can all wait on something outside this process, and a
+        caller left holding a coroutine that never returns has no way to tell
+        that from a slow page. A blocked fetch has to look like an error rather
+        than like silence.
         """
         try:
             return await asyncio.wait_for(
