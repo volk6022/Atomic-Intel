@@ -110,6 +110,35 @@ services:
       # task completion, the api reads it back after Redis's 24h TTL expires.
       - research-data:/data/research
 
+  # Declaring `@broker.task(schedule=[...])` is not enough on its own: taskiq
+  # splits the roles, and the cron side needs its own process. Without this
+  # service the monitor sweep is defined and never runs - which is exactly what
+  # happened for the first month, with an empty `monitor:*` namespace in Redis
+  # as the only symptom.
+  scheduler:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    env_file:
+      - .env
+    command: ["uv", "run", "taskiq", "scheduler", "src.infrastructure.queue.monitor_worker:scheduler"]
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-atomic}:${POSTGRES_PASSWORD:-change_me}@postgres:5432/${POSTGRES_DB:-atomic_intel}
+      - PYTHONUNBUFFERED=1
+    # Runs no HTTP server - drop the healthcheck inherited from the image.
+    healthcheck:
+      disable: true
+    depends_on:
+      redis:
+        condition: service_healthy
+    mem_limit: 512m
+    networks:
+      - scraper-network
+
   bot:
     build:
       context: .

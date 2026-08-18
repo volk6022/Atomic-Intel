@@ -35,7 +35,12 @@ HELP_TEXT = (
     "/usage &lt;name&gt; — quota, concurrency, running tasks, BYO-LLM status\n"
     "/listtenants — list all tenants\n"
     "/sethousellm &lt;base_url&gt; — set the shared house-LLM endpoint "
-    "(super-admin only; e.g. a rotating tunnel URL)\n"
+    "(super-admin only; e.g. a rotating tunnel URL)\n\n"
+    "<b>Order-feed monitor</b>\n"
+    "/mon — sweep status and controls\n"
+    "/llm — scoring LLM fallback chain\n"
+    "/prompt — scoring and draft prompts\n"
+    "/profile — the profile the scorer reads\n"
 )
 
 

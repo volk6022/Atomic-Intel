@@ -1,10 +1,10 @@
 """Entrypoint for the Atomic Intel admin bot (aiogram v3, long polling).
 
-Admin-only front for the tenant/key control-plane living in Postgres — issue
-and revoke api keys, tune per-tenant quota/concurrency, bind or clear a
-tenant's BYO-LLM endpoint, and check usage. See ``src/bot/handlers/tenants.py``
-for the command set and ``src/bot/middlewares/admin_guard.py`` for the
-``ADMIN_TG_IDS`` allowlist gate.
+Admin-only front for two things: the tenant/key control-plane living in
+Postgres (issue and revoke api keys, tune quota/concurrency, bind a tenant's
+BYO-LLM endpoint) and the order-feed monitor (``/mon``, ``/llm``, ``/prompt``,
+``/profile``). See ``src/bot/handlers/`` for the command sets and
+``src/bot/middlewares/admin_guard.py`` for the ``ADMIN_TG_IDS`` allowlist gate.
 
 Run via ``uv run python -m src.bot.main`` (see the ``bot`` service in
 ``docker-compose.yml``).
@@ -18,6 +18,9 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
+from src.bot.handlers.content import router as content_router
+from src.bot.handlers.llm import router as llm_router
+from src.bot.handlers.monitor import router as monitor_router
 from src.bot.handlers.tenants import router as tenants_router
 from src.bot.middlewares.admin_guard import AdminGuardMiddleware
 from src.core.config import settings
@@ -41,7 +44,13 @@ async def main() -> None:
     )
     dispatcher = Dispatcher()
     dispatcher.message.middleware(AdminGuardMiddleware())
+    dispatcher.callback_query.middleware(AdminGuardMiddleware())
     dispatcher.include_router(tenants_router)
+    dispatcher.include_router(monitor_router)
+    dispatcher.include_router(llm_router)
+    # Last on purpose: this router owns the catch-all "next message replaces the
+    # prompt" handler, and anything registered after it would never be reached.
+    dispatcher.include_router(content_router)
 
     logger.info("Atomic Intel admin bot starting (long polling)")
     await bot.delete_webhook(drop_pending_updates=True)

@@ -3,6 +3,11 @@
 The bot issues/revokes api keys and binds BYO-LLM endpoints, so every update
 is gated on the sender's Telegram user id being in ``ADMIN_TG_IDS`` (CSV env
 var). Fails closed: an unset/empty allowlist admits nobody.
+
+Callback queries go through the same gate. The monitor's notification buttons
+change stored state (marking a posting taken, retoggling a category), and a
+button is just as forwardable as a command - gating only ``message`` would leave
+that side open.
 """
 
 from __future__ import annotations
@@ -10,7 +15,7 @@ from __future__ import annotations
 from typing import Any, Awaitable, Callable
 
 from aiogram import BaseMiddleware
-from aiogram.types import TelegramObject, Message
+from aiogram.types import CallbackQuery, Message, TelegramObject
 
 from src.core.config import settings
 from src.core.logging import get_logger
@@ -43,7 +48,9 @@ class AdminGuardMiddleware(BaseMiddleware):
             logger.warning("ADMIN_TG_IDS is empty — rejecting all bot commands")
             return None
 
-        user = event.from_user if isinstance(event, Message) else None
+        user = (
+            event.from_user if isinstance(event, (Message, CallbackQuery)) else None
+        )
         if user is None or user.id not in admin_ids:
             logger.warning(
                 "Rejected bot update from non-admin tg id=%s",
