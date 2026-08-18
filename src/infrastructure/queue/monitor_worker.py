@@ -22,6 +22,7 @@ Two rules the ordering encodes:
 
 from __future__ import annotations
 
+import asyncio
 import inspect
 from typing import Any, Optional
 
@@ -36,6 +37,10 @@ from src.infrastructure.queue.broker import broker
 from src.infrastructure.tasks import monitor_settings, monitor_store
 
 logger = get_logger(__name__)
+
+# Ceiling for one detail fetch. Generous next to the 25s httpx timeout, tight
+# enough that a stuck source costs one item rather than the sweep.
+DETAIL_TIMEOUT_S = 45.0
 
 
 def _csv(value: str) -> list[str]:
@@ -81,10 +86,26 @@ async def _collect(source: str, limit: int):
 
 
 async def _enrich(source: str, item) -> dict:
-    """Item plus whatever the detail step can add. Never raises."""
+    """Item plus whatever the detail step can add. Never raises, never hangs.
+
+    The timeout is not paranoia. ``detail`` goes through the hybrid fetch, which
+    falls back to Playwright when httpx trips anti-bot — and a browser that
+    cannot start does not raise, it waits. One such page used to stall the whole
+    sweep indefinitely, and in the scheduled path that wedges a worker slot for
+    good. A detail is an optimisation; the listing already carries enough to
+    score, so giving up on it is always better than blocking.
+    """
     payload = item.model_dump()
     try:
-        detail = await get_scraper(source).detail(payload)
+        detail = await asyncio.wait_for(
+            get_scraper(source).detail(payload), timeout=DETAIL_TIMEOUT_S
+        )
+    except asyncio.TimeoutError:
+        logger.warning(
+            "monitor: detail timed out after %ss for %s/%s - scoring the listing as-is",
+            DETAIL_TIMEOUT_S, source, item.id,
+        )
+        return payload
     except Exception as exc:  # noqa: BLE001 - a failed detail is not a failed item
         logger.info("monitor: detail failed for %s/%s: %s", source, item.id, exc)
         return payload
@@ -200,9 +221,20 @@ async def run_monitor_sweep(
             threshold = monitor_settings.threshold(contour)
             passed = verdict["score"] >= threshold
 
+            # Send before recording, so the stored card knows whether it was
+            # actually delivered. Recording first and never coming back to fix
+            # the flag left every entry reading "not sent", which is exactly the
+            # column `/mon last` uses to show what reached the phone.
             draft = ""
+            notified = False
             if passed and notify_enabled:
                 draft = await scoring.draft_reply(client, payload, verdict)
+                notified = await notify.send_notification(payload, verdict, draft)
+                if notified:
+                    sent += 1
+                    monitor_store.bump_stat("sent")
+            elif not passed:
+                monitor_store.bump_stat("below_threshold")
 
             monitor_store.record_result(
                 {
@@ -218,18 +250,11 @@ async def run_monitor_sweep(
                     "match_type": verdict.get("match_type"),
                     "matched_offer": verdict.get("matched_offer"),
                     "reason": verdict.get("reason"),
-                    "notified": False,
+                    "notified": notified,
                     "draft": draft,
                     "item": payload,
                 }
             )
-
-            if passed and notify_enabled:
-                if await notify.send_notification(payload, verdict, draft):
-                    sent += 1
-                    monitor_store.bump_stat("sent")
-            elif not passed:
-                monitor_store.bump_stat("below_threshold")
 
             monitor_store.mark_seen(source, [item.id])
 
@@ -252,13 +277,15 @@ async def run_monitor_sweep(
 
 
 def _sweep_cron() -> str:
-    """Cron expression from MONITOR_INTERVAL_MINUTES (every N min, or hourly).
+    """Cron expression for the sweep (every N min, or hourly).
 
-    Read once, at import: Taskiq label schedules are static. Changing the
-    interval from the bot takes effect on the next scheduler restart — the
-    command says so rather than pretending otherwise.
+    Read once, at import: Taskiq label schedules are static, so a new interval
+    takes effect on the next scheduler restart — the command says so rather than
+    pretending otherwise. It has to read the *stored* interval, not the env one:
+    ``/mon every`` writes to Redis, so reading the env here meant the setting
+    could never take effect, restart or not.
     """
-    n = max(1, settings.MONITOR_INTERVAL_MINUTES)
+    n = max(1, monitor_settings.interval_minutes())
     return f"*/{n} * * * *" if n < 60 else "0 * * * *"
 
 

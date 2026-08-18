@@ -11,9 +11,13 @@ say - the misses are almost all ``adjacent``, and only that bucket needs
 tightening.
 
 **Budget, competition and freshness are not in the score.** They are not
-relevance. They run as flat prefilters before the model (which also saves the
-tokens) and as sort keys after it. Folded into the score they would be
-indistinguishable from a bad fit, and a rejected item could never be explained.
+relevance. Folded into the score they would be indistinguishable from a bad fit,
+and a rejected item could never be explained.
+
+Budget and competition run as flat prefilters before the model, which also saves
+the tokens. Freshness has no filter: every source here is a date-ordered feed
+read from the top, so a stale posting cannot reach the sweep in the first place.
+Adding a filter would only matter if a source started returning by relevance.
 """
 
 from __future__ import annotations
@@ -110,7 +114,10 @@ def _render_item(item: dict) -> str:
         f"SOURCE: {item.get('source', '')}",
         f"TITLE: {item.get('title', '')}",
         f"CATEGORY: {extra.get('category') or item.get('category') or 'unknown'}",
-        f"BUDGET: {item.get('amount') or 'not stated'}",
+        # Labelled as the client's, not as a quote: the drafting prompt was
+        # reading a bare "BUDGET" as the price to name and quoting the client's
+        # own ceiling straight back at him.
+        f"BUDGET THE CLIENT NAMED: {item.get('amount') or 'not stated'}",
     ]
     count = offers_count(item)
     if count is not None:

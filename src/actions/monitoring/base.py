@@ -111,7 +111,24 @@ class BaseSourceScraper(ABC):
 
         ``wait_s`` adds a settle delay after DOM-ready for JS-hydrated pages
         (e.g. hh.ru embeds its vacancy JSON after an initial network round-trip).
+
+        The whole thing is bounded. ``page.goto`` has its own timeout, but the
+        steps before it do not: on an image with no browser binaries installed,
+        launching one waits forever rather than failing, and the caller is left
+        holding a coroutine that never returns. A blocked page has to look like
+        an error, not like silence.
         """
+        try:
+            return await asyncio.wait_for(
+                self._browser_get_inner(url, wait_s=wait_s),
+                timeout=(settings.BROWSER_TIMEOUT / 1000) + 20,
+            )
+        except asyncio.TimeoutError as exc:
+            raise AntibotBlockedError(
+                f"{self.source}: browser fallback timed out for {url}"
+            ) from exc
+
+    async def _browser_get_inner(self, url: str, *, wait_s: float = 0.0) -> str:
         proxy = proxy_provider.get_proxy() if settings.MONITOR_USE_PROXY else None
         context = await pool_manager.create_context(stealth=True, proxy=proxy)
         try:
