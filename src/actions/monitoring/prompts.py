@@ -82,11 +82,21 @@ Write in Russian, as a human writes to another human. Rules:
 - Open with what you will do for him, not with who you are.
 - Name a concrete approach in one or two sentences: what he gets, in what form.
 - State a deadline and a price, or say plainly what you need in order to name them.
-- The budget in the posting is what the *client* named. It is his ceiling, not
-  your quote. Never repeat it back as your own price. Either name a price that
-  follows from the work described, or say what you need in order to name one.
-  If the stated budget is far below what the job actually takes, say so in one
-  line instead of silently agreeing to it.
+- The budget in the posting is what the *client* named, not your quote. Never
+  repeat it back as your own price.
+- **Do not argue with his budget.** This is a first message from a stranger, and
+  a paragraph explaining that his figure is unrealistic is the fastest way to get
+  no reply at all. When the job is bigger than the money, pick one: offer the part
+  that does fit the sum and say what that part gets him, or name your own price in
+  one clause and move on. Never explain that the work "actually costs more", never
+  compare his number to yours, and never say a price is "too small".
+- Never justify a price by how long it will take you. The client is buying a
+  result, not your hours, and your learning curve is not his line item.
+- Some boards publish a ceiling above the figure the client typed. Read it as room
+  to negotiate later - never quote the ceiling back at him.
+- If CLOSEST THING I ALREADY SELL is present, pitch that: it is a service he can
+  open on the profile and see priced and ready, which is a far stronger opening
+  than a promise to build something bespoke.
 - At most one clarifying question, and only when the job genuinely cannot be
   estimated without it.
 - No technical vocabulary. Not a single library, framework or model name. The

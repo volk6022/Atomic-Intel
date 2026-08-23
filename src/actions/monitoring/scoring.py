@@ -87,6 +87,19 @@ def offers_count(item: dict) -> Optional[int]:
     return None
 
 
+def price_ceiling(item: dict) -> Optional[int]:
+    """The upper bound the board itself allows, when the source publishes one.
+
+    kwork carries two numbers: what the client says he wants to pay, and a
+    ceiling that is three times higher in 85% of postings. Only the first was
+    ever surfaced, so every kwork project read three times cheaper than it was -
+    to the operator and to the model deciding whether the job is worth the price
+    it would take. fl.ru has no equivalent field and returns ``None``.
+    """
+    extra = item.get("extra") or {}
+    return parse_amount(item.get("price_ceiling") or extra.get("possiblePriceLimit"))
+
+
 def passes_cheap_filters(item: dict) -> tuple[bool, str]:
     """Flat checks that run before the model. Returns ``(ok, reason_if_dropped)``.
 
@@ -119,6 +132,12 @@ def _render_item(item: dict) -> str:
         # own ceiling straight back at him.
         f"BUDGET THE CLIENT NAMED: {item.get('amount') or 'not stated'}",
     ]
+    ceiling = price_ceiling(item)
+    named = parse_amount(item.get("amount"))
+    if ceiling and (named is None or ceiling > named):
+        # Without this the model reads kwork's "wanted" figure as the whole
+        # budget and spends the draft telling the client he is underpaying.
+        lines.append(f"CEILING THE BOARD LETS HIM GO TO: {ceiling}")
     count = offers_count(item)
     if count is not None:
         lines.append(f"OFFERS ALREADY SUBMITTED: {count}")

@@ -27,6 +27,7 @@ logger = get_logger(__name__)
 TG_LIMIT = 4096
 _BRIEF_BUDGET = 2200
 
+CB_REPLIED = "mon:replied"
 CB_TOOK = "mon:took"
 CB_SKIP = "mon:skip"
 CB_REDRAFT = "mon:redraft"
@@ -70,9 +71,27 @@ def _summary_line(item: dict, score: dict[str, Any]) -> str:
     if count is not None:
         parts.append(f"{count} {_plural(count, 'отклик', 'отклика', 'откликов')}")
 
-    parts.append(_money(item.get("amount")))
+    parts.append(_budget(item))
     parts.append(f"контур {score.get('contour', '?').upper()}")
     return " · ".join(parts)
+
+
+def _budget(item: dict) -> str:
+    """What the client wants to pay, and how far the board lets him go.
+
+    kwork publishes both numbers and the ceiling is three times the wanted figure
+    in 85% of postings. Showing only the first made every kwork project look
+    three times cheaper than it was, which is exactly the number the operator was
+    deciding on.
+    """
+    from src.actions.monitoring.scoring import parse_amount, price_ceiling
+
+    wanted = _money(item.get("amount"))
+    ceiling = price_ceiling(item)
+    named = parse_amount(item.get("amount"))
+    if ceiling and (named is None or ceiling > named):
+        return f"{wanted} (потолок {ceiling:,} ₽)".replace(",", " ")
+    return wanted
 
 
 def _price_anchor(item: dict) -> str:
@@ -126,7 +145,13 @@ def format_notification(item: dict, score: dict[str, Any], draft: str = "") -> s
 
 
 def build_keyboard(item: dict):
-    """Взял / Мимо / Ещё вариант, or ``None`` when aiogram is unavailable."""
+    """Откликнулся / Мимо / Взял / Ещё вариант, or ``None`` without aiogram.
+
+    "Откликнулся" and "Взял" are two different events and collapsing them loses
+    the only number that matters: how many answers it takes to win one job. A
+    posting marked "Взял" but never "Откликнулся" is a mislabelled row, so the
+    two live on separate rows and the funnel reads top to bottom.
+    """
     try:
         from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
     except ImportError:  # the worker image has aiogram, unit tests may not
@@ -136,10 +161,13 @@ def build_keyboard(item: dict):
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="Взял", callback_data=f"{CB_TOOK}:{ref}"),
+                InlineKeyboardButton(text="Откликнулся", callback_data=f"{CB_REPLIED}:{ref}"),
                 InlineKeyboardButton(text="Мимо", callback_data=f"{CB_SKIP}:{ref}"),
+            ],
+            [
+                InlineKeyboardButton(text="Взял", callback_data=f"{CB_TOOK}:{ref}"),
                 InlineKeyboardButton(text="Ещё вариант", callback_data=f"{CB_REDRAFT}:{ref}"),
-            ]
+            ],
         ]
     )
 

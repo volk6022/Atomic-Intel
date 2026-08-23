@@ -242,6 +242,13 @@ async def on_category_toggle(callback: CallbackQuery) -> None:
         pass
 
 
+@router.callback_query(F.data.startswith(f"{notify.CB_REPLIED}:"))
+async def on_replied(callback: CallbackQuery) -> None:
+    """Answered the client. Not the same event as winning the job, and the gap
+    between the two counts is the conversion the whole feed exists to improve."""
+    await _record_verdict(callback, "replied", "отметил: откликнулся")
+
+
 @router.callback_query(F.data.startswith(f"{notify.CB_TOOK}:"))
 async def on_took(callback: CallbackQuery) -> None:
     await _record_verdict(callback, "took", "отметил: взял")
