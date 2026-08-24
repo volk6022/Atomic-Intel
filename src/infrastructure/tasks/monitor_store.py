@@ -167,6 +167,42 @@ def find_result(source: str, item_id: str) -> Optional[dict]:
     return None
 
 
+# ----------------------------------------------------------------- sweep lock
+_LOCK_KEY = "monitor:sweep:lock"
+
+
+def acquire_sweep_lock(ttl_seconds: int) -> bool:
+    """Claim the right to run a sweep, or return False if one is already running.
+
+    At a fifteen-minute cadence overlap was impossible; at two minutes it is the
+    normal case, because a sweep with a lot of new items still outlasts its own
+    interval. Overlapping sweeps do the same work twice, race each other on
+    ``mark_seen`` and can notify the same posting from two processes.
+
+    The TTL is the release: a worker killed mid-sweep would otherwise wedge the
+    schedule until someone noticed. Without Redis there is a single process and
+    nothing to coordinate, so the lock is granted.
+    """
+    r = _get_redis()
+    if r is None:
+        return True
+    try:
+        return bool(r.set(_LOCK_KEY, str(time.time()), nx=True, ex=max(60, ttl_seconds)))
+    except Exception as e:
+        logger.error("monitor_store.acquire_sweep_lock failed: %s", e)
+        return True
+
+
+def release_sweep_lock() -> None:
+    r = _get_redis()
+    if r is None:
+        return
+    try:
+        r.delete(_LOCK_KEY)
+    except Exception as e:
+        logger.error("monitor_store.release_sweep_lock failed: %s", e)
+
+
 # ------------------------------------------------------------------ feedback
 def record_feedback(source: str, item_id: str, verdict: str) -> None:
     field = f"{source}:{item_id}"

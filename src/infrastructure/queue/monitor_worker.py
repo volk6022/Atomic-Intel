@@ -327,7 +327,18 @@ async def scheduled_monitor_sweep() -> dict[str, Any]:
     if not monitor_settings.enabled():
         logger.info("monitor: disabled (/mon on to enable) - skipping sweep")
         return {"skipped": "disabled"}
-    return await run_monitor_sweep()
+
+    # A busy sweep outlasts a two-minute interval, so the scheduler will fire the
+    # next one on top of it unless something says no.
+    lock_ttl = max(600, monitor_settings.interval_minutes() * 60 * 5)
+    if not monitor_store.acquire_sweep_lock(lock_ttl):
+        logger.info("monitor: previous sweep still running - skipping this tick")
+        monitor_store.bump_stat("skipped_overlap")
+        return {"skipped": "already running"}
+    try:
+        return await run_monitor_sweep()
+    finally:
+        monitor_store.release_sweep_lock()
 
 
 # Scheduler entrypoint:  taskiq scheduler src.infrastructure.queue.monitor_worker:scheduler

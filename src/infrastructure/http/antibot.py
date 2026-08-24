@@ -44,9 +44,18 @@ def detect_antibot(resp: httpx.Response) -> AntibotVerdict:
         or "__ddg" in set_cookie
         or "ddos-guard" in body_head
     ):
-        # A real page also sets __ddg cookies once solved; only flag if the body
-        # is a challenge stub (short) or explicitly names the guard.
-        if "ddos-guard" in server or "ddos-guard" in body_head:
+        # DDoS-Guard fronts whole sites, so ``Server: ddos-guard`` and the __ddg
+        # cookies ride on every response it proxies - including the ones that came
+        # back perfectly fine. Flagging on the header alone sent fl.ru's every
+        # detail page to a 6-10s browser render to re-fetch a 160KB page httpx had
+        # already retrieved in 1.6s. The challenge itself is unmistakable: a short
+        # body, a block status, or its own name in the visible markup.
+        challenge_marker = "ddos-guard" in body[:4_000]
+        if (
+            resp.status_code in BLOCK_STATUSES
+            or len(body) < 5_000
+            or challenge_marker
+        ):
             return AntibotVerdict.DDOS_GUARD
 
     # --- Cloudflare ---------------------------------------------------------
