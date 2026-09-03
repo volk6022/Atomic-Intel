@@ -1,10 +1,15 @@
 """Turning a scored posting into the Telegram message the operator actually reads.
 
-The shape is fixed by how it gets used: link first (so the posting is one tap
-away), then the title and the brief **verbatim** - not summarised, because a
-summary is one more thing that can be wrong and the point is to decide without
-opening the site. The draft reply goes in a code block so a single tap copies it
-with no Telegram formatting glued on.
+The shape is fixed by how it gets used. Title first, and directly under it the
+money: the notification popup shows a line or two and nothing else, so anything
+below the brief may as well not exist, and what he pays, how many already
+answered and what they asked are the numbers that decide whether to open it at
+all. The link gives up first place for that - it is one tap from anywhere, while
+a URL as line one spends the whole preview on characters nobody reads. Then the
+brief **verbatim** - not summarised, because a summary is one more thing that can
+be wrong and the point is to decide without opening the site. The draft reply
+goes in a code block so a single tap copies it with no Telegram formatting glued
+on.
 
 "Skip" is not decoration. It is the only labelling that will ever exist here, and
 after a couple of weeks it says which ``match_type`` is over-reporting - which is
@@ -59,20 +64,41 @@ def _money(value: Any) -> str:
 
 
 def _summary_line(item: dict, score: dict[str, Any]) -> str:
-    from src.actions.monitoring.scoring import offers_count
-
+    """Verdict, not money: the numbers moved up to ``_headline``."""
     parts = [f"score {score.get('score', 0)}"]
 
     label = _MATCH_LABELS.get(score.get("match_type", ""), score.get("match_type", ""))
     matched = (score.get("matched_offer") or "").strip()
     parts.append(f"{label} «{matched}»" if matched else label)
 
+    parts.append(f"контур {score.get('contour', '?').upper()}")
+    return " · ".join(parts)
+
+
+def _headline(item: dict) -> str:
+    """Money and competition, for the line directly under the title.
+
+    This is what the notification popup shows, so it carries only the three
+    numbers a glance can act on: what he offers, how many already answered, and
+    what those answers asked for. Everything else waits until the chat is open.
+    """
+    from src.actions.monitoring.scoring import offers_count, parse_amount
+
+    parts = [_budget(item)]
+
     count = offers_count(item)
     if count is not None:
         parts.append(f"{count} {_plural(count, 'отклик', 'отклика', 'откликов')}")
 
-    parts.append(_budget(item))
-    parts.append(f"контур {score.get('contour', '?').upper()}")
+    stats = (item.get("offers_stats")
+             or (item.get("extra") or {}).get("offers_stats") or {})
+    # fl.ru fills both bounds with 1 when the answers say "по договорённости",
+    # and that placeholder in the popup is worse than no line at all.
+    low, high = parse_amount(stats.get("minCost")), parse_amount(stats.get("maxCost"))
+    if (low or 0) >= 100 or (high or 0) >= 100:
+        span = _money(low) if low == high else f"{_money(low)[:-2]}–{_money(high)}"
+        parts.append(f"конкуренты {span}")
+
     return " · ".join(parts)
 
 
@@ -95,18 +121,17 @@ def _budget(item: dict) -> str:
 
 
 def _price_anchor(item: dict) -> str:
-    """What competitors actually asked, when fl.ru told us.
+    """How many competitors attached work samples, when fl.ru told us.
 
-    Nowhere in the site's own interface is this visible; it is the single most
-    useful number for deciding what to quote.
+    The price range itself moved into ``_headline``; what stays here is the one
+    number the range does not carry — how many of those answers came with
+    examples, which is the thing an empty portfolio is losing against.
     """
     stats = (item.get("offers_stats") or (item.get("extra") or {}).get("offers_stats") or {})
-    low, high = stats.get("minCost"), stats.get("maxCost")
-    if not low and not high:
-        return ""
     with_files = stats.get("offersWithAttachCount")
-    tail = f", из них с примерами работ: {with_files}" if with_files else ""
-    return f"Конкуренты просят: {low}–{high} ₽{tail}"
+    if not with_files:
+        return ""
+    return f"С примерами работ откликнулись: {with_files}"
 
 
 def format_notification(item: dict, score: dict[str, Any], draft: str = "") -> str:
@@ -116,9 +141,12 @@ def format_notification(item: dict, score: dict[str, Any], draft: str = "") -> s
     if len(brief) > _BRIEF_BUDGET:
         brief = brief[:_BRIEF_BUDGET].rsplit(" ", 1)[0] + " […]"
 
+    # Title and headline are one block on purpose: joined by a single newline
+    # they stay together in the popup, where a blank line would cost the only
+    # other row it shows.
     blocks = [
+        f"<b>{html.escape(item.get('title', ''))}</b>\n{_headline(item)}",
         html.escape(item.get("url", "")),
-        f"<b>{html.escape(item.get('title', ''))}</b>",
         html.escape(brief),
         _summary_line(item, score),
     ]
